@@ -267,6 +267,32 @@ func (v *VirtualK8S) buildPodInformer(podInformer informerv1.PodInformer) {
 					v.updatedPod <- newCopy
 				}
 			},
+			DeleteFunc: func(obj interface{}) {
+				if !v.configured {
+					return
+				}
+				pod, ok := obj.(*corev1.Pod)
+				if !ok {
+					return
+				}
+				podCopy := pod.DeepCopy()
+				// If a pod is virtual pod, we just return
+				if util.IsVirtualPod(podCopy) {
+					return
+				}
+				if v.providerNode.Node == nil {
+					return
+				}
+				if len(podCopy.Spec.NodeName) != 0 {
+					podResource := util.GetRequestFromPod(podCopy)
+					podResource.Pods = resource.MustParse("1")
+					v.providerNode.AddResource(podResource)
+					klog.Infof("Lower cluster delete pod %s, resource: %v, node: %v",
+						podCopy.Name, podResource, v.providerNode.Status.Capacity)
+					copy := v.providerNode.DeepCopy()
+					v.updatedNode <- copy
+				}
+			},
 		},
 	)
 }
